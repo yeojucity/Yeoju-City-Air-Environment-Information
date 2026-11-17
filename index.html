@@ -220,7 +220,7 @@ footer .fwarn{text-align:center;font-size:13px;color:#ff9800;letter-spacing:.3px
       </section>
       <section class="panel" style="border-top-color:#1a3a6a;">
         <div class="sec-t" style="font-size:20px;">경기도 측정소 현황<small id="mapCnt"></small></div>
-        <div class="mapbox"><div id="map"></div><div class="map-attr">© OpenStreetMap contributors · © CARTO</div><div class="map-tag" id="mapTag">초미세먼지 PM2.5</div>
+        <div class="mapbox"><div id="map"></div><div class="map-attr">© OpenStreetMap contributors</div><div class="map-tag" id="mapTag">초미세먼지 PM2.5</div>
           <div class="map-btns"><button id="btnAll" type="button">경기도 전체</button><button id="btnYj" type="button">여주 중심</button></div></div>
         <div class="legend" id="legend"></div>
       </section>
@@ -557,13 +557,14 @@ function initMap(){
   if(typeof L==='undefined'){ $('map').innerHTML='<div style="padding:40px;color:#7aafd4;font-size:20px">지도 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인)</div>'; return; }
   map=L.map('map',{zoomControl:false,attributionControl:false,dragging:true,scrollWheelZoom:true,doubleClickZoom:true,boxZoom:false,keyboard:false,touchZoom:true,zoomSnap:0.1,minZoom:7,maxZoom:14});
   L.control.zoom({position:'topright',zoomInText:'+',zoomOutText:'−'}).addTo(map);
-  // 기본: CARTO 다크 지도 (Referer 제한 없음) / 타일 오류가 반복되면 OSM 으로 자동 대체
-  const carto=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:14,minZoom:7}).addTo(map);
+  // 기본: OpenStreetMap (GitHub Pages 처럼 웹주소로 띄우면 정상, CSS 로 어둡게 처리)
+  // 타일 오류가 반복되면 Esri 다크 회색 지도로 자동 대체 (※ CARTO 는 API 키 요구로 사용 중단)
+  const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:14,minZoom:7,className:'osm-fb'}).addTo(map);
   let tileErr=0;
-  carto.on('tileerror',()=>{
+  osm.on('tileerror',()=>{
     if(++tileErr===6){
-      map.removeLayer(carto);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:14,minZoom:7,className:'osm-fb'}).addTo(map);
+      map.removeLayer(osm);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:14,minZoom:7}).addTo(map);
     }
   });
   layer=L.layerGroup().addTo(map);
