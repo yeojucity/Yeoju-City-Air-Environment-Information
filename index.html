@@ -118,7 +118,8 @@ header{position:relative;display:flex;align-items:center;justify-content:space-b
 /* ③-2 지도 (하단 좌, 2) */
 .mapbox{position:relative;flex:1;min-height:0;border-radius:10px;overflow:hidden;border:1px solid var(--border2);background:#030c18;}
 #map{position:absolute;inset:0;background:#030c18;}
-.leaflet-tile{filter:brightness(.5) saturate(.4) hue-rotate(190deg);}
+.leaflet-layer.osm-fb .leaflet-tile{filter:brightness(.5) saturate(.4) hue-rotate(190deg);}   /* 대체 지도(OSM)일 때만 어둡게 */
+.map-attr{position:absolute;z-index:500;left:8px;bottom:6px;font-size:11px;color:rgba(255,255,255,.55);background:rgba(2,8,16,.6);padding:1px 6px;border-radius:4px;pointer-events:none;}
 .leaflet-container{background:#030c18;font-family:inherit;}
 .m-pin{border-radius:50%;box-shadow:0 0 9px currentColor;}
 .m-pin.yj{border:3px solid #ff2222;animation:yjpulse 1.1s ease-in-out infinite;}
@@ -219,7 +220,7 @@ footer .fwarn{text-align:center;font-size:13px;color:#ff9800;letter-spacing:.3px
       </section>
       <section class="panel" style="border-top-color:#1a3a6a;">
         <div class="sec-t" style="font-size:20px;">경기도 측정소 현황<small id="mapCnt"></small></div>
-        <div class="mapbox"><div id="map"></div><div class="map-tag" id="mapTag">초미세먼지 PM2.5</div>
+        <div class="mapbox"><div id="map"></div><div class="map-attr">© OpenStreetMap contributors · © CARTO</div><div class="map-tag" id="mapTag">초미세먼지 PM2.5</div>
           <div class="map-btns"><button id="btnAll" type="button">경기도 전체</button><button id="btnYj" type="button">여주 중심</button></div></div>
         <div class="legend" id="legend"></div>
       </section>
@@ -284,9 +285,12 @@ const TPL = {
    ===================================================================== */
 const DEMO = /[?&]demo=1/.test(location.search);
 const WORKER = "https://yeoju-air-proxy.jiminsfa7511.workers.dev";
+// 경기도 전체 측정소 수신용 새 Worker 주소 (airkorea-gg-worker.js 를 배포한 뒤 입력)
+// 비워 두면 아래 '기존 목록' 방식으로 동작 → 이름이 틀린 측정소는 점검중으로 표시됨
+const WORKER_GG = "https://yeoju-air-gg2.jiminsfa7511.workers.dev";
 
-// 경기도 전체 측정소 (기존 상황판과 동일한 목록·좌표 / 측정소명은 에어코리아 DB와 정확히 일치해야 함)
-const STATIONS=[
+// 기존 상황판의 측정소 목록 (WORKER_GG 미설정/실패 시에만 사용 — 이름이 에어코리아 DB와 다르면 수신 안 됨)
+let STATIONS=[
   // ── 도시대기 측정소 ──
   {city:"수원시",name:"영통",lat:37.2508,lon:127.0716},{city:"수원시",name:"수원",lat:37.2636,lon:127.0286},
   {city:"수원시",name:"팔달",lat:37.2795,lon:127.0095},{city:"수원시",name:"권선",lat:37.2432,lon:126.9864},
@@ -346,6 +350,31 @@ const STATIONS=[
 ];
 
 STATIONS.forEach(s=>{ s.v=null; });
+const STATIONS_LEGACY=STATIONS;
+let SRC='legacy', GG_ERR='';                         // 데이터 출처 표시(점검용)
+
+/* ── 경기도 전체 수신: 시도별 실시간 + 측정소 목록(이름·좌표)을 에어코리아에서 그대로 받아 구성 ── */
+async function fetchGG(){
+  const r=await fetch(`${WORKER_GG}?gg=1`,{signal:AbortSignal.timeout(30000)});
+  const j=await r.json();
+  if(!r.ok||!j.ok) throw new Error(j.error||('worker '+r.status));
+  const rt={}; (j.realtime||[]).forEach(it=>{ if(it.stationName) rt[it.stationName]=it; });
+  const pref=['중앙동','가남읍','대신면'], out=[];
+  (j.stations||[]).forEach(st=>{
+    const it=rt[st.stationName]; if(!it) return;     // 실시간 자료가 있는 측정소만
+    let lat=parseFloat(st.dmX), lon=parseFloat(st.dmY);
+    if(lat>100&&lon<100){ const t=lat; lat=lon; lon=t; }   // 좌표 순서가 뒤바뀐 경우 보정
+    if(!(lat>33&&lat<39&&lon>124&&lon<130)) return;
+    const tok=(st.addr||'').split(/\s+/), city=tok.find((t,i)=>i>0&&/[시군]$/.test(t))||'';
+    if(!city) return;
+    const s={city,name:st.stationName,lat,lon,road:/도로변/.test(st.mangName||''),v:toV(it)};
+    if(city==='여주시'){ s.yeoju=true; s.yname=st.stationName.replace(/\(.*\)/,''); }
+    out.push(s);
+  });
+  out.sort((a,b)=>(a.yeoju?pref.indexOf(a.yname)-9:0)-(b.yeoju?pref.indexOf(b.yname)-9:0)); // 여주 3개소 순서 고정
+  if(!out.length) throw new Error('경기도 측정소 목록이 비어 있습니다');
+  return {list:out, realtime:(j.realtime||[]).length, listed:(j.stations||[]).length};
+}
 
 const GN=['좋음','보통','나쁨','매우나쁨'], GE=['😊','🙂','😷','🚨'];
 const LIM={ pm25:[15,35,75], pm10:[30,80,150], o3:[0.03,0.09,0.15], no2:[0.03,0.06,0.2], co:[2,9,15], so2:[0.02,0.05,0.15] };
@@ -369,13 +398,14 @@ function parseDT(str){
 function toV(it){
   const t=parseDT(it.dataTime), stale=!t||(Date.now()-t.getTime()>4*3600*1000);
   const v={pm25:num(it.pm25Value),pm10:num(it.pm10Value),o3:num(it.o3Value),no2:num(it.no2Value),co:num(it.coValue),so2:num(it.so2Value),time:it.dataTime||''};
+  v.stale=stale;
   if(stale){ ['pm25','pm10','o3','no2','co','so2'].forEach(k=>v[k]=null); }
   return v;
 }
 
 /* ── Worker 배치 수신 (기존 상황판 fetchBatch 와 동일 방식) ── */
 async function fetchBatch(names){
-  const r=await fetch(`${WORKER}?station=${names.map(encodeURIComponent).join(',')}`,{signal:AbortSignal.timeout(20000)});
+  const r=await fetch(`${WORKER}?station=${names.map(encodeURIComponent).join(',')}`,{signal:AbortSignal.timeout(30000)});
   if(!r.ok) throw new Error('worker '+r.status);
   const arr=await r.json(), result={};
   arr.forEach((item,idx)=>{
@@ -524,7 +554,15 @@ function initMap(){
   if(typeof L==='undefined'){ $('map').innerHTML='<div style="padding:40px;color:#7aafd4;font-size:20px">지도 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인)</div>'; return; }
   map=L.map('map',{zoomControl:false,attributionControl:false,dragging:true,scrollWheelZoom:true,doubleClickZoom:true,boxZoom:false,keyboard:false,touchZoom:true,zoomSnap:0.1,minZoom:7,maxZoom:14});
   L.control.zoom({position:'topright',zoomInText:'+',zoomOutText:'−'}).addTo(map);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:15,minZoom:7}).addTo(map);
+  // 기본: CARTO 다크 지도 (Referer 제한 없음) / 타일 오류가 반복되면 OSM 으로 자동 대체
+  const carto=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:14,minZoom:7}).addTo(map);
+  let tileErr=0;
+  carto.on('tileerror',()=>{
+    if(++tileErr===6){
+      map.removeLayer(carto);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:14,minZoom:7,className:'osm-fb'}).addTo(map);
+    }
+  });
   layer=L.layerGroup().addTo(map);
   viewAll(false); drawMarkers();
   $('btnAll').onclick=()=>viewAll(true);
@@ -543,6 +581,7 @@ function viewYeoju(anim){ map.setView([37.298,127.638],11,{animate:!!anim}); }
 function drawMarkers(){
   if(!layer)return;
   const P=POLLS[pollIdx]; layer.clearLayers();
+  const miss=STATIONS.filter(s=>grade(P.k,s.v&&s.v[P.k])<0).length;
   $('mapTag').textContent=P.label+' ('+P.unit+')';
   STATIONS.forEach(s=>{
     const g=grade(P.k,s.v&&s.v[P.k]), c=ghex(g), yj=!!s.yeoju, sz=yj?17:11;
@@ -554,11 +593,33 @@ function drawMarkers(){
   });
   $('mapCnt').textContent=STATIONS.length+'개소 · 10초 전환';
   $('legend').innerHTML=GN.map((n,i)=>`<span><i style="background:${COLHEX[i]}"></i>${n}</span>`).join('')+
-    `<span><i style="background:#78909c"></i>점검중</span><span><i class="yjl"></i>여주시</span>`;
+    `<span><i style="background:#78909c"></i>${booting?'수신 중':'점검중'} ${miss}</span><span><i class="yjl"></i>여주시</span>`;
 }
 
 /* ── 데이터 수신 (매시 정각 자동 갱신) ── */
-function refreshAll(){ renderStations(); renderRank(); drawMarkers(); }
+const DEBUG=/[?&]debug=1/.test(location.search);
+function renderDebug(){
+  if(!DEBUG)return;
+  let el=$('dbg'); if(!el){ el=document.createElement('div'); el.id='dbg';
+    el.style.cssText='position:absolute;left:350px;top:640px;width:580px;max-height:330px;overflow:hidden;z-index:3000;background:rgba(2,8,16,.96);border:2px solid #ff9800;border-radius:10px;padding:10px 14px;font-size:14px;line-height:1.5;color:#e8f4ff;';
+    $('stage').appendChild(el); }
+  const T=STATIONS.length, cnt=f=>STATIONS.filter(f).length, names=f=>STATIONS.filter(f).map(s=>s.name).slice(0,24).join(', ');
+  const noresp=s=>s.why==='noresp'||s.why==='noval', fail=s=>s.why==='fail', stale=s=>s.v&&s.v.stale;
+  const keys=[['pm25','PM2.5'],['pm10','PM10'],['o3','O₃'],['no2','NO₂'],['co','CO'],['so2','SO₂']];
+  const times=STATIONS.map(s=>s.v&&s.v.time).filter(Boolean).sort();
+  const gi=STATIONS.ggInfo;
+  const srcTxt=SRC==='gg'?`에어코리아 경기도 전체 조회 (실시간 ${gi?gi.realtime:'-'}건 · 측정소목록 ${gi?gi.listed:'-'}건)`
+    :(WORKER_GG?`기존 목록 방식 (경기도 전체 조회 실패: ${GG_ERR||'-'})`:'기존 목록 방식 (WORKER_GG 미설정 → 이름이 틀린 측정소는 점검중)');
+  el.innerHTML=`<b style="color:#ff9800">점검 정보 (?debug=1)</b> · 전체 ${T}개소<br>
+   ▪ 출처: <b>${srcTxt}</b><br>
+   ▪ ${SRC==='gg'?'값이 비어 있는 측정소':'서버가 응답을 안 준 측정소'}: <b>${cnt(noresp)}</b> <span style="color:#7aafd4">${SRC==='gg'?'(점검·교정 중이거나 해당 시각 미확정)':'(측정소명 불일치 가능)'}</span><br>
+   <span style="color:#7aafd4;font-size:12px">${names(noresp)||'-'}</span><br>
+   ▪ 묶음 수신 실패: <b>${cnt(fail)}</b> · 4시간 넘은 자료: <b>${cnt(stale)}</b><br>
+   ▪ 항목별 결측(측정소 수): ${keys.map(([k,l])=>l+' <b>'+cnt(s=>s.v&&s.v[k]==null)+'</b>').join(' · ')}<br>
+   ▪ 자료 시각: ${times[0]||'-'} ~ ${times[times.length-1]||'-'}<br>
+   <span style="color:#7aafd4;font-size:12px">※ 값이 '-'로 오는 항목은 해당 측정소가 그 항목을 측정하지 않거나 최신 시각 값이 아직 확정 전인 경우입니다.</span>`;
+}
+function refreshAll(){ renderStations(); renderRank(); drawMarkers(); renderDebug(); }
 function setStatus(label,cls,stat,bad){
   $('liveLabel').textContent=label; $('livePill').style.opacity=cls==='dim'?.6:1; $('livePill').classList.toggle('bad',!!bad);
   $('dataStat').textContent=stat||''; $('dataStat').className=bad?'bad':'';
@@ -571,25 +632,57 @@ async function loadAll(){
   let got=0;
   if(DEMO){
     STATIONS.forEach(s=>{s.v=demoVals(s);}); got=STATIONS.length;
+  }else if(WORKER_GG && await (async()=>{
+      try{
+        const g=await fetchGG(); STATIONS=g.list; SRC='gg'; GG_ERR=''; STATIONS.ggInfo={realtime:g.realtime,listed:g.listed};
+        STATIONS.forEach(s=>{ s.why=null; if(Object.values(s.v).slice(0,6).some(x=>x!=null)) got++; else s.why='noval'; });
+        // 여주 측정소 값이 비어 있으면 기존 Worker(측정소 지정 조회)로 한 번 더 시도
+        const miss=STATIONS.filter(s=>s.yeoju&&s.why==='noval');
+        if(miss.length){ try{ const res=await fetchBatch(miss.map(s=>s.name)); miss.forEach(s=>{const it=res[s.name]; if(it){s.v=toV(it); if(s.v.pm25!=null||s.v.pm10!=null){s.why=null;got++;}}}); }catch(e){} }
+        booting=false; refreshAll(); return true;
+      }catch(e){ console.warn('경기도 전체 수신 실패 → 기존 목록 방식으로 대체',e); GG_ERR=String(e.message||e); return false; }
+    })()){
+    /* 경기도 전체 수신 완료 */
+  }else if(SRC==='gg'){
+    // 이미 받아 둔 경기도 자료가 있으면 일시적 수신 실패 때 지우지 않고 유지 (오래된 값은 4시간 뒤 자동 점검중 처리)
+    STATIONS.forEach(s=>{ if(s.v&&s.v.time){ const t=parseDT(s.v.time); if(!t||Date.now()-t.getTime()>4*3600*1000){ ['pm25','pm10','o3','no2','co','so2'].forEach(k=>s.v[k]=null); s.v.stale=true; } } });
+    got=STATIONS.filter(s=>s.v&&['pm25','pm10'].some(k=>s.v[k]!=null)).length;
   }else{
-    const apply=(res,list)=>list.forEach(s=>{const it=res[s.name]; if(it){s.v=toV(it);got++;}});
-    try{ const yj=STATIONS.filter(s=>s.yeoju); apply(await fetchBatch(yj.map(s=>s.name)),yj); booting=false; refreshAll(); }catch(e){ console.warn('여주 수신 오류',e); }
-    const others=STATIONS.filter(s=>!s.yeoju);
-    for(let i=0;i<others.length;i+=10){
-      const b=others.slice(i,i+10);
-      try{ apply(await fetchBatch(b.map(s=>s.name)),b); refreshAll(); }catch(e){ console.warn('배치 수신 오류',e); }
-    }
+    const apply=(res,list)=>list.forEach(s=>{const it=res[s.name]; if(it){s.v=toV(it);s.why=null;got++;}else{s.why='noresp';}});
+    const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+    const total=STATIONS.length; let done=0;
+    // 한 묶음 수신: 실패하면 2초 뒤 한 번 더 시도 → 그래도 실패하면 '수신 실패'로 기록
+    const run=async(list)=>{
+      let ok=false;
+      for(let a=0;a<2&&!ok;a++){
+        try{ apply(await fetchBatch(list.map(s=>s.name)),list); ok=true; }
+        catch(e){ console.warn('수신 오류',list.map(s=>s.name).join(','),e); if(a===0) await sleep(2000); }
+      }
+      if(!ok) list.forEach(s=>{s.why='fail';});
+      done+=list.length; if(got>0) booting=false;
+      setStatus('수신 중','dim',`측정값 수신 중… ${done}/${total}`);
+      refreshAll();
+    };
+    // ① 여주 3개소는 각각 따로·동시에 받아서 가장 먼저 표시
+    await Promise.all(STATIONS.filter(s=>s.yeoju).map(s=>run([s])));
+    // ② 나머지는 5개씩 묶어 동시에 3묶음씩 수신 (서버 응답이 느려도 한 묶음이 전체를 막지 않음)
+    const others=STATIONS.filter(s=>!s.yeoju), chunks=[];
+    for(let i=0;i<others.length;i+=5) chunks.push(others.slice(i,i+5));
+    let next=0;
+    await Promise.all([0,1,2].map(async()=>{ while(next<chunks.length){ await run(chunks[next++]); } }));
   }
   booting=false; refreshAll(); renderForecast(); renderWxMini();
   const t=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
   if(DEMO)          setStatus('데모 모드','',`※ 예시 데이터 (화면 점검용) · ${t}`,true);
-  else if(got>0)    setStatus('실시간 수신','',`실데이터 ${got}/${STATIONS.length}개소 · ${t} 수신`,false);
+  else if(got>0)    setStatus('실시간 수신','',`실데이터 ${got}/${STATIONS.length}개소 · ${t} 수신${SRC==='gg'&&GG_ERR?' (갱신 실패, 직전 자료 표시)':''}`,false);
   else              setStatus('수신 지연','',`⚠ 실데이터 수신 실패 — 2분 후 재시도`,true);
   loading=false;
   if(!DEMO && got===0) setTimeout(loadAll,120000);
 }
 function msToNextHour(){ const n=new Date(); return Math.round((3600-(n.getMinutes()*60+n.getSeconds()+n.getMilliseconds()/1000))*1000)+500; }
 let nextRefAt=Date.now()+msToNextHour();
+// 경기도 전체 조회는 호출이 1회뿐이라 10분마다 가볍게 확인 (에어코리아가 정각 직후엔 새 시각 값을 아직 확정하지 않는 경우 대비)
+if(WORKER_GG && !DEMO) setInterval(()=>{ loadAll(); },600000);
 function scheduleNext(){
   const d=msToNextHour(); nextRefAt=Date.now()+d;
   setTimeout(async()=>{ await loadAll(); scheduleNext(); },d);
