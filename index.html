@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>여주시 대기환경 실시간 상황판</title>
+<title>여주시 대기환경측정 모니터링 시스템</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -172,22 +172,54 @@ header{position:relative;display:flex;align-items:center;justify-content:space-b
 
 
 /* ── 푸터 ── */
-footer{flex-shrink:0;margin:8px 14px 8px;height:58px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 24px;border-top:2px solid var(--border2);font-size:16px;color:var(--txt2);}
+footer{flex-shrink:0;margin:8px 14px 8px;height:58px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 24px;border-top:2px solid var(--border2);font-size:16px;font-weight:700;color:var(--txt2);}
 footer span{color:var(--cyan);font-weight:700;}
 footer .frow{display:flex;align-items:center;justify-content:space-between;}
-footer b{font-weight:600;color:var(--txt);font-size:15px;}
+footer b{font-weight:700;color:var(--txt);font-size:15px;}
 footer b.bad{color:#ff9800;}
-footer .fwarn{text-align:center;font-size:13px;color:#ff9800;letter-spacing:.3px;}
+footer .fwarn{text-align:center;font-weight:700;font-size:13px;color:#ff9800;letter-spacing:.3px;}
+
+/* ── 계절 애니메이션 (30분마다 약 10초) ── */
+#fx{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:4000;pointer-events:none;opacity:0;transition:opacity .9s ease;
+  background:linear-gradient(180deg,rgba(2,8,20,.32),rgba(2,8,20,.58));overflow:hidden;}
+#fx.on{opacity:1;}
+#fx canvas{position:absolute;left:0;top:0;width:1920px;height:1080px;}
+#fx svg.scene{position:absolute;bottom:0;overflow:visible;}
+#fx .arm,#fx .grp,#fx .pop,#fx .drop,#fx .ballscale,#fx .ballspin{transform-origin:0 0;}
+@keyframes tossL{0%,10%{transform:rotate(0)}16%,24%{transform:rotate(150deg)}34%,46%{transform:rotate(8deg)}52%,60%{transform:rotate(150deg)}70%,100%{transform:rotate(0)}}
+@keyframes tossR{0%,10%{transform:rotate(0)}16%,24%{transform:rotate(-150deg)}34%,46%{transform:rotate(-8deg)}52%,60%{transform:rotate(-150deg)}70%,100%{transform:rotate(0)}}
+.tossL{animation:tossL 10s ease-in-out both;}.tossR{animation:tossR 10s ease-in-out both;}
+@keyframes mArmR{0%{transform:rotate(0)}8%,42%{transform:rotate(-80deg)}48%,74%{transform:rotate(-15deg)}78%{transform:rotate(-150deg)}84%{transform:rotate(-125deg)}90%{transform:rotate(-150deg)}96%{transform:rotate(-125deg)}100%{transform:rotate(-140deg)}}
+@keyframes mArmL{0%{transform:rotate(0)}8%,42%{transform:rotate(-80deg)}48%,74%{transform:rotate(15deg)}78%{transform:rotate(150deg)}84%{transform:rotate(125deg)}90%{transform:rotate(150deg)}96%{transform:rotate(125deg)}100%{transform:rotate(140deg)}}
+@keyframes wArmR{0%{transform:rotate(0)}8%,50%{transform:rotate(-62deg)}56%,62%{transform:rotate(-150deg)}70%,74%{transform:rotate(-15deg)}78%{transform:rotate(-150deg)}84%{transform:rotate(-125deg)}90%{transform:rotate(-150deg)}96%{transform:rotate(-125deg)}100%{transform:rotate(-140deg)}}
+@keyframes wArmL{0%{transform:rotate(0)}8%,50%{transform:rotate(-62deg)}56%,62%{transform:rotate(150deg)}70%,74%{transform:rotate(15deg)}78%{transform:rotate(150deg)}84%{transform:rotate(125deg)}90%{transform:rotate(150deg)}96%{transform:rotate(125deg)}100%{transform:rotate(140deg)}}
+.mArmR{animation:mArmR 10s ease-in-out both;}.mArmL{animation:mArmL 10s ease-in-out both;}
+.wArmR{animation:wArmR 10s ease-in-out both;}.wArmL{animation:wArmL 10s ease-in-out both;}
+@keyframes pushers{0%,8%{transform:translateX(113px)}40%,100%{transform:translateX(438px)}}
+@keyframes ballx{0%,8%{transform:translateX(260px)}40%,100%{transform:translateX(640px)}}
+@keyframes balls{0%,8%{transform:scale(.3)}40%,100%{transform:scale(1)}}
+@keyframes spin{0%,8%{transform:rotate(0)}40%,100%{transform:rotate(900deg)}}
+@keyframes carryhide{0%,51%{opacity:1}52%,100%{opacity:0}}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-5px)}}
+.pushers{animation:pushers 10s linear both;}.ballpos{animation:ballx 10s linear both;}
+.ballscale{animation:balls 10s linear both;}.ballspin{animation:spin 10s linear both;}
+.carry{animation:carryhide 10s linear both;}
+.bobber{animation:bob .45s ease-in-out infinite alternate;}
+@keyframes dropIn{0%{transform:translateY(-340px);opacity:0}1%{opacity:1}55%{transform:translateY(0)}70%{transform:translateY(-14px)}85%,100%{transform:translateY(0);opacity:1}}
+@keyframes popIn{0%{transform:scale(0);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
+.drop{opacity:0;animation:dropIn .9s ease-in both;}
+.pop{opacity:0;animation:popIn .45s ease-out both;}
 </style>
 </head>
 <body>
 <div id="stage">
+  <div id="fx"></div>
   <header>
     <div class="h-left">
       <div class="logo">🌫️</div>
       <div class="h-title">
-        <h1>여주시 실시간 대기환경 현황</h1>
-        <p>Yeoju-si Real-time Air Quality Monitoring · 중앙동 · 가남읍 · 대신면</p>
+        <h1>여주시 대기환경측정 모니터링 시스템</h1>
+        <p>Yeoju-si Air Quality Monitoring System · 중앙동 · 가남읍 · 대신면</p>
       </div>
     </div>
     <div class="h-right">
@@ -262,8 +294,6 @@ const PROMO = [
   { type:'video', src:'pm25.mp4' },
   { type:'video', src:'jugam.mp4' },
   { type:'video', src:'level5.mp4' },
-  { type:'tpl', id:'season', sec:12 },
-  { type:'tpl', id:'action', sec:12 },
 ];
 
 const TPL = {
@@ -695,7 +725,9 @@ function scheduleNext(){
 /* ── ④ 홍보 슬라이드쇼 ── */
 (function promo(){
   const box=$('pslides'), dots=$('pdots'), prog=$('pprog');
-  let cur=-1, timer=null;
+  let cur=-1, timer=null, failCnt=0;
+  const msg=document.createElement('div'); msg.hidden=true; msg.style.cssText='position:absolute;left:0;right:0;bottom:46px;z-index:6;text-align:center;font-size:20px;font-weight:700;color:#ffb74d;';
+  msg.textContent='홍보영상을 불러오지 못했습니다 (영상 파일 위치·이름을 확인해 주세요)'; box.parentNode.appendChild(msg);
   PROMO.forEach((p,i)=>{
     const el=document.createElement('div'); el.className='pslide';
     if(p.type==='image'){ el.innerHTML=`<img src="${p.src}" alt="">`; }
@@ -714,8 +746,11 @@ function scheduleNext(){
     prog.style.transition='none'; prog.style.width='0';
     if(p.type==='video'){
       const v=el.querySelector('video'); v.currentTime=0;
-      v.onended=next; v.onerror=next;
-      v.play().catch(next);
+      // 영상 재생에 실패하면 다음으로 넘어가되, 전부 실패하면(파일 없음 등) 30초 쉬었다가 다시 시도
+      const fail=()=>{ if(++failCnt>=PROMO.length){ failCnt=0; msg.hidden=false; timer=setTimeout(next,30000); } else next(); };
+      v.onplaying=()=>{ failCnt=0; msg.hidden=true; };
+      v.onended=next; v.onerror=fail;
+      v.play().catch(fail);
       prog.style.width='0';
     } else {
       const ms=(p.sec||12)*1000;
@@ -724,6 +759,114 @@ function scheduleNext(){
     }
   }
   if(PROMO.length) show(0);
+})();
+
+/* ── 계절 애니메이션: 가을(단풍 던지는 연인) / 겨울(눈사람 만드는 연인) — 30분마다 약 10초 ── */
+(function seasonFx(){
+  const root=$('fx'); if(!root) return;
+  const DUR=10000; let playing=false, raf=0, timer=0;
+  const seasonOf=d=>{ const m=d.getMonth()+1; return (m>=9&&m<=11)?'autumn':(m===12||m<=2)?'winter':null; };
+
+  /* 사람 그리기 (정면, 발바닥 y=400, 몸 중심 x=cx) */
+  const SK='#f2cba6';
+  function person(kind,cx,clsL,clsR){
+    const arm=(sx,cls,col)=>`<g transform="translate(${cx+sx},200)"><g class="arm ${cls}"><rect x="-9" y="-6" width="18" height="96" rx="9" fill="${col}"/><circle cx="0" cy="92" r="10.5" fill="${SK}"/></g></g>`;
+    if(kind==='m'){
+      return `<g>
+        <rect x="${cx-22}" y="300" width="20" height="94" rx="8" fill="#2f3b55"/><rect x="${cx+2}" y="300" width="20" height="94" rx="8" fill="#2f3b55"/>
+        <ellipse cx="${cx-12}" cy="398" rx="17" ry="7" fill="#1b1f2b"/><ellipse cx="${cx+12}" cy="398" rx="17" ry="7" fill="#1b1f2b"/>
+        <rect x="${cx-32}" y="186" width="64" height="130" rx="20" fill="#6b5640"/><line x1="${cx}" y1="204" x2="${cx}" y2="316" stroke="#4c3b2a" stroke-width="3"/>
+        <rect x="${cx-26}" y="176" width="52" height="18" rx="9" fill="#c4452f"/><rect x="${cx+6}" y="186" width="14" height="46" rx="6" fill="#c4452f"/>
+        ${arm(-34,clsL,'#6b5640')}${arm(34,clsR,'#6b5640')}
+        <circle cx="${cx}" cy="148" r="27" fill="${SK}"/>
+        <path d="M${cx-28} 146 C${cx-30} 118 ${cx-8} 110 ${cx+6} 112 C${cx+22} 112 ${cx+30} 128 ${cx+27} 146 C${cx+20} 134 ${cx+8} 128 ${cx-4} 130 C${cx-14} 132 ${cx-22} 138 ${cx-28} 146Z" fill="#2a2118"/>
+        <circle cx="${cx-9}" cy="152" r="2.8" fill="#2a2118"/><circle cx="${cx+9}" cy="152" r="2.8" fill="#2a2118"/>
+        <path d="M${cx-7} 163 Q${cx} 170 ${cx+7} 163" stroke="#8a4b3a" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>`;
+    }
+    return `<g>
+      <ellipse cx="${cx}" cy="172" rx="38" ry="58" fill="#5a2f22"/>
+      <rect x="${cx-17}" y="300" width="15" height="92" rx="7" fill="#3a3347"/><rect x="${cx+2}" y="300" width="15" height="92" rx="7" fill="#3a3347"/>
+      <rect x="${cx-22}" y="370" width="21" height="32" rx="7" fill="#5a3a2a"/><rect x="${cx+1}" y="370" width="21" height="32" rx="7" fill="#5a3a2a"/>
+      <path d="M${cx-30} 190 L${cx+30} 190 L${cx+44} 330 L${cx-44} 330Z" fill="#e0a030" stroke="#e0a030" stroke-width="10" stroke-linejoin="round"/>
+      <rect x="${cx-36}" y="236" width="72" height="10" fill="#8a5a1c"/>
+      <path d="M${cx-18} 186 L${cx} 214 L${cx+18} 186Z" fill="#f6e3b4"/>
+      ${arm(-33,clsL,'#e0a030')}${arm(33,clsR,'#e0a030')}
+      <circle cx="${cx}" cy="148" r="26" fill="${SK}"/>
+      <path d="M${cx-27} 146 C${cx-30} 116 ${cx} 108 ${cx+16} 114 C${cx+28} 120 ${cx+29} 136 ${cx+27} 148 C${cx+18} 136 ${cx+6} 130 ${cx-8} 132 C${cx-18} 134 ${cx-24} 140 ${cx-27} 146Z" fill="#5a2f22"/>
+      <circle cx="${cx-9}" cy="152" r="2.8" fill="#2a2118"/><circle cx="${cx+9}" cy="152" r="2.8" fill="#2a2118"/>
+      <circle cx="${cx-16}" cy="160" r="5" fill="#f08a8a" opacity=".45"/><circle cx="${cx+16}" cy="160" r="5" fill="#f08a8a" opacity=".45"/>
+      <path d="M${cx-6} 162 Q${cx} 168 ${cx+6} 162" stroke="#a04a4a" stroke-width="2.4" fill="none" stroke-linecap="round"/></g>`;
+  }
+  const AUT={L:700,W:520,H:420,wx:190,mx:330};
+  const sceneAutumn=()=>`<svg class="scene" style="left:${AUT.L}px" width="${AUT.W}" height="${AUT.H}" viewBox="0 0 ${AUT.W} ${AUT.H}">
+    ${person('w',AUT.wx,'tossL','tossR')}${person('m',AUT.mx,'tossL','tossR')}</svg><canvas id="fxc" width="1920" height="1080"></canvas>`;
+
+  const ball=(r)=>`<circle cx="0" cy="0" r="${r}" fill="#f4f9fe" stroke="#c4d9ea" stroke-width="3"/>
+    <path d="M${-r*.55} ${-r*.1} Q${-r*.1} ${-r*.6} ${r*.5} ${-r*.3}" stroke="#d3e3f1" stroke-width="${Math.max(3,r*.07)}" fill="none" stroke-linecap="round"/>
+    <circle cx="${r*.35}" cy="${r*.35}" r="${r*.16}" fill="#e3eef8"/><circle cx="${-r*.4}" cy="${r*.3}" r="${r*.12}" fill="#e3eef8"/>`;
+  const sceneWinter=()=>`<svg class="scene" style="left:460px" width="1000" height="420" viewBox="0 0 1000 420">
+    <path d="M0 408 Q150 384 330 400 T700 394 T1000 406 L1000 420 L0 420Z" fill="#eaf3fb" opacity=".96"/>
+    <g transform="translate(0,400)"><g class="ballpos"><g class="ballscale"><g transform="translate(0,-78)"><g class="ballspin">${ball(78)}</g></g></g></g></g>
+    <g transform="translate(640,198)"><g class="drop" style="animation-delay:4.4s">${ball(54)}</g></g>
+    <g transform="translate(640,114)"><g class="drop" style="animation-delay:5.4s">${ball(38)}
+       <g transform="translate(0,0)"></g></g></g>
+    <g transform="translate(640,198)"><g class="pop" style="animation-delay:6.5s"><g transform="translate(-52,-6) rotate(-35)"><rect x="-44" y="-3" width="46" height="6" rx="3" fill="#6b4a2a"/><path d="M-30 0 L-40 -14 M-22 0 L-28 12" stroke="#6b4a2a" stroke-width="4" stroke-linecap="round"/></g><g transform="translate(52,-6) rotate(35)"><rect x="-2" y="-3" width="46" height="6" rx="3" fill="#6b4a2a"/><path d="M30 0 L40 -14 M22 0 L28 12" stroke="#6b4a2a" stroke-width="4" stroke-linecap="round"/></g></g></g>
+    <g transform="translate(640,114)">
+      <g class="pop" style="animation-delay:6.3s"><circle cx="-13" cy="-8" r="4.2" fill="#222"/><circle cx="13" cy="-8" r="4.2" fill="#222"/></g>
+      <g class="pop" style="animation-delay:6.5s"><path d="M0 0 L30 5 L0 11Z" fill="#f08a2a"/></g>
+      <g class="pop" style="animation-delay:6.6s"><path d="M-14 16 Q0 24 14 16" stroke="#222" stroke-width="3" fill="none" stroke-linecap="round"/></g>
+      <g class="drop" style="animation-delay:7.3s"><rect x="-30" y="-54" width="60" height="34" rx="4" fill="#2b2f3d"/><rect x="-44" y="-24" width="88" height="9" rx="4.5" fill="#2b2f3d"/><rect x="-30" y="-34" width="60" height="7" fill="#c4452f"/></g>
+    </g>
+    <g transform="translate(640,160)"><g class="pop" style="animation-delay:6.9s"><path d="M-36 0 Q0 18 36 0 L36 12 Q0 30 -36 12Z" fill="#c4452f"/><rect x="14" y="8" width="14" height="40" rx="5" fill="#c4452f"/></g></g>
+    <g transform="translate(640,198)"><g class="pop" style="animation-delay:6.7s"><circle cx="0" cy="-8" r="5" fill="#2b2f3d"/><circle cx="0" cy="14" r="5" fill="#2b2f3d"/></g></g>
+    <g class="grp pushers"><g class="bobber">
+      ${person('m',0,'mArmL','mArmR')}
+      ${person('w',-150,'wArmL','wArmR')}
+      <g class="carry" transform="translate(-52,258)">${ball(30)}</g>
+    </g></g></svg><canvas id="fxc" width="1920" height="1080"></canvas>`;
+
+  /* 단풍잎 / 눈 파티클 (캔버스) */
+  const MAPLE=(()=>{ const h=[[0,-1],[.12,-.68],[.3,-.78],[.27,-.42],[.58,-.55],[.52,-.22],[.95,-.12],[.7,.12],[.78,.32],[.4,.3],[.12,.62],[.03,.62]];
+    const pts=h.concat(h.slice().reverse().map(([x,y])=>[-x,y])); const p=new Path2D(); pts.forEach(([x,y],i)=>i?p.lineTo(x,y):p.moveTo(x,y)); p.closePath(); return p; })();
+  const LEAFC=['#d9531e','#e8812a','#f2b134','#b3302a','#c9662a','#e9a03a'];
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+  function run(kind){
+    const cv=$('fxc'); if(!cv) return; const ctx=cv.getContext('2d'); const P=[]; let t0=performance.now(), last=t0, launched=[false,false];
+    const handPos=(cx,side)=>({x:AUT.L+cx+side*33+side*.5*92, y:(1080-AUT.H)+200-.866*92});
+    function leaf(x,y,vx,vy){ P.push({k:'leaf',x,y,vx,vy,sz:rnd(22,44),rot:rnd(0,6.28),rr:rnd(-3,3),fl:rnd(0,6.28),fr:rnd(2,5),ph:rnd(0,6.28),c:LEAFC[(Math.random()*LEAFC.length)|0]}); }
+    function snow(){ P.push({k:'snow',x:rnd(-20,1940),y:-10,vy:rnd(70,150),r:rnd(2,5.5),ph:rnd(0,6.28),a:rnd(.55,.95)}); }
+    function frame(now){
+      const T=now-t0, dt=Math.min(.05,(now-last)/1000); last=now; ctx.clearRect(0,0,1920,1080);
+      if(kind==='autumn'){
+        [1600,5200].forEach((ms,i)=>{ if(!launched[i]&&T>=ms){ launched[i]=true;
+          [[AUT.wx,-1],[AUT.wx,1],[AUT.mx,-1],[AUT.mx,1]].forEach(([cx,sd])=>{ const h=handPos(cx,sd); for(let n=0;n<13;n++) leaf(h.x+rnd(-10,10),h.y+rnd(-10,10),sd*rnd(60,360)+rnd(-120,120),-rnd(800,1500)); }); } });
+        if(T>800&&T<8800&&Math.random()<dt*14) leaf(rnd(0,1920),-40,rnd(-40,40),rnd(60,180));
+      } else if(T>300&&T<9200){ { let c=dt*70; while(c>0){ if(Math.random()<Math.min(1,c)) snow(); c--; } } }
+      const sec=T/1000;
+      for(let i=P.length-1;i>=0;i--){ const q=P[i];
+        if(q.k==='leaf'){ q.vy+=(380-1.6*q.vy)*dt; q.vx+=(-1.6*q.vx)*dt; q.x+=(q.vx+Math.sin(sec*2+q.ph)*70)*dt; q.y+=q.vy*dt; q.rot+=q.rr*dt; q.fl+=q.fr*dt;
+          if(q.y>1140){ P.splice(i,1); continue; }
+          ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(q.rot); ctx.scale(q.sz*(.3+.7*Math.abs(Math.cos(q.fl))),q.sz); ctx.fillStyle=q.c; ctx.fill(MAPLE); ctx.lineWidth=.07; ctx.strokeStyle='rgba(90,30,10,.55)'; ctx.stroke(MAPLE); ctx.restore();
+        } else { q.y+=q.vy*dt; q.x+=Math.sin(sec*1.6+q.ph)*34*dt; if(q.y>1100){ P.splice(i,1); continue; }
+          ctx.globalAlpha=q.a; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(q.x,q.y,q.r,0,6.283); ctx.fill(); ctx.globalAlpha=1; }
+      }
+      if(T<DUR+300) raf=requestAnimationFrame(frame);
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  function play(kind){
+    if(playing||!kind) return; playing=true;
+    root.innerHTML=kind==='autumn'?sceneAutumn():sceneWinter();
+    void root.offsetWidth; root.classList.add('on'); run(kind);
+    timer=setTimeout(()=>{ root.classList.remove('on'); },DUR-900);
+    setTimeout(()=>{ cancelAnimationFrame(raf); root.innerHTML=''; playing=false; },DUR+400);
+  }
+  // 정각·30분마다 한 번씩
+  let lastSlot='';
+  setInterval(()=>{ const n=new Date(); if(n.getMinutes()%30===0&&n.getSeconds()<3){ const k=n.getHours()+':'+n.getMinutes(); if(k!==lastSlot){ lastSlot=k; play(seasonOf(n)); } } },1000);
+  // 미리보기: 주소 뒤에 ?fx=autumn 또는 ?fx=winter
+  const m=/[?&]fx=(autumn|winter)/.exec(location.search); if(m) setTimeout(()=>play(m[1]),1500);
+  window.__playFx=play;
 })();
 
 /* ── 시계 / 화면맞춤 / 번인방지 ── */
