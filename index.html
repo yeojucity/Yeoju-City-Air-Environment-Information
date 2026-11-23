@@ -209,6 +209,10 @@ footer .fwarn{text-align:center;font-weight:700;font-size:13px;color:#ff9800;let
 @keyframes popIn{0%{transform:scale(0);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
 .drop{opacity:0;animation:dropIn .9s ease-in both;}
 .pop{opacity:0;animation:popIn .45s ease-out both;}
+#fxv{position:absolute;left:0;top:0;right:0;bottom:0;z-index:20;background:#000;opacity:0;pointer-events:none;transition:opacity .9s ease;border-radius:inherit;overflow:hidden;}
+#fxv.on{opacity:1;}
+#fxv video{width:100%;height:100%;object-fit:cover;display:block;}
+#fxv .cr{position:absolute;right:16px;bottom:12px;font-size:16px;font-weight:700;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9);}
 </style>
 </head>
 <body>
@@ -260,6 +264,7 @@ footer .fwarn{text-align:center;font-weight:700;font-size:13px;color:#ff9800;let
 
     <!-- 하단 우 (1) : 홍보 -->
     <section class="panel promo p-promo" id="promo">
+      <div id="fxv"><span class="cr">영상 제공: 여주시청</span></div>
       <div class="promo-bar">여주시 기후환경과 홍보<small id="pcount"></small></div>
       <div id="pslides"></div>
       <div class="pdots" id="pdots"></div>
@@ -269,7 +274,7 @@ footer .fwarn{text-align:center;font-weight:700;font-size:13px;color:#ff9800;let
 
   <footer>
     <div class="frow">
-      <div>출처: <span>기후에너지환경부 에어코리아(AirKorea)</span> · 한국환경공단</div>
+      <div>출처: <span>기후에너지환경부 에어코리아(AirKorea)</span> - 한국환경공단, <span>기상청</span></div>
       <div>다음 정시 갱신: <span id="nextRef">--:--</span> · <b id="dataStat"></b></div>
       <div>여주시 기후환경과 | <span>중앙동 · 가남읍 · 대신면</span></div>
       <div>Developed by <span>외론늑대</span></div>
@@ -555,23 +560,30 @@ function renderForecast(){
   $('fct').innerHTML=h;
 }
 
-/* ── 헤더: 기온·날씨 (Open-Meteo, 여주시) ── */
-let WEATHER=null;
-function wcToIconTxt(wc){
-  if(wc===0)return{icon:'☀️',txt:'맑음'}; if(wc===1)return{icon:'🌤️',txt:'구름조금'}; if(wc===2)return{icon:'⛅',txt:'구름많음'}; if(wc===3)return{icon:'☁️',txt:'흐림'};
-  if(wc<=49)return{icon:'🌫️',txt:'안개'}; if(wc<=67)return{icon:'🌧️',txt:'비'}; if(wc<=77)return{icon:'❄️',txt:'눈'}; if(wc<=82)return{icon:'🌦️',txt:'소나기'};
-  return{icon:'⛈️',txt:'뇌우'};
+/* ── 헤더: 기온·날씨 (기상청 단기예보 조회서비스 · 초단기실황/초단기예보, 여주시 격자 71,121 — Worker ?kma=1) ── */
+let WEATHER=null, WX_ERR='';
+function kmaIconTxt(k){
+  // 강수형태(PTY) 우선: 1 비, 2 비/눈, 3 눈, 5 빗방울, 6 빗방울눈날림, 7 눈날림
+  const pty={1:['🌧️','비'],2:['🌨️','비/눈'],3:['❄️','눈'],5:['🌦️','빗방울'],6:['🌨️','진눈깨비'],7:['❄️','눈날림']}[k.pty];
+  if(pty) return {icon:pty[0],txt:pty[1]};
+  // 하늘상태(SKY): 1 맑음, 3 구름많음, 4 흐림
+  const hr=new Date().getHours(), night=(hr>=18||hr<6);
+  if(k.sky===1) return {icon:night?'🌙':'☀️',txt:'맑음'};
+  if(k.sky===3) return {icon:'⛅',txt:'구름많음'};
+  if(k.sky===4) return {icon:'☁️',txt:'흐림'};
+  return {icon:'🌡️',txt:'관측'};
 }
 async function fetchWeather(retry=true){
   if(DEMO){ WEATHER={icon:'☀️',temp:8,desc:'맑음'}; renderWxMini(); return; }
   try{
-    const url='https://api.open-meteo.com/v1/forecast?latitude=37.298&longitude=127.638&current=temperature_2m,weather_code&timezone=Asia%2FSeoul';
-    const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
-    if(!r.ok) throw new Error('weather '+r.status);
-    const c=(await r.json())?.current; if(!c||c.temperature_2m==null) throw new Error('weather empty');
-    const {icon,txt}=wcToIconTxt(c.weather_code||0);
-    WEATHER={icon,temp:Math.round(c.temperature_2m),desc:txt};
-  }catch(e){ console.warn('기상 수신 오류',e); if(retry) setTimeout(()=>fetchWeather(false),30000); }
+    if(!WORKER_GG) throw new Error('WORKER_GG 미설정');
+    const r=await fetch(`${WORKER_GG}?kma=1`,{signal:AbortSignal.timeout(15000)});
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||('worker '+r.status));
+    const k=j.kma; if(!k||k.t1h==null) throw new Error('기온 값 없음');
+    const {icon,txt}=kmaIconTxt(k);
+    WEATHER={icon,temp:Math.round(k.t1h),desc:txt}; WX_ERR='';
+  }catch(e){ console.warn('기상청 날씨 수신 오류',e); WX_ERR=String(e.message||e).slice(0,120); WEATHER=null; if(retry) setTimeout(()=>fetchWeather(false),30000); }
   renderWxMini();
 }
 function renderWxMini(){
@@ -646,6 +658,7 @@ function renderDebug(){
     :(WORKER_GG?`기존 목록 방식 (경기도 전체 조회 실패: ${GG_ERR||'-'})`:'기존 목록 방식 (WORKER_GG 미설정 → 이름이 틀린 측정소는 점검중)');
   el.innerHTML=`<b style="color:#ff9800">점검 정보 (?debug=1)</b> · 전체 ${T}개소<br>
    ▪ 출처: <b>${srcTxt}</b><br>
+   ▪ 기상청 날씨: <b>${WEATHER?'수신 정상':'미수신 ('+(WX_ERR||'-')+')'}</b><br>
    ▪ ${SRC==='gg'?'값이 비어 있는 측정소':'서버가 응답을 안 준 측정소'}: <b>${cnt(noresp)}</b> <span style="color:#7aafd4">${SRC==='gg'?'(점검·교정 중이거나 해당 시각 미확정)':'(측정소명 불일치 가능)'}</span><br>
    <span style="color:#7aafd4;font-size:12px">${names(noresp)||'-'}</span><br>
    ▪ 묶음 수신 실패: <b>${cnt(fail)}</b> · 4시간 넘은 자료: <b>${cnt(stale)}</b><br>
@@ -854,8 +867,23 @@ function scheduleNext(){
     }
     raf=requestAnimationFrame(frame);
   }
+  /* 여주시청 홍보 영상(fx_autumn.mp4 / fx_winter.mp4)이 있으면 홍보 구역 위에 재생, 없으면 그림 애니메이션으로 대체 */
+  const fxv=$('fxv'), vids={};
+  ['autumn','winter'].forEach(k=>{ const v=document.createElement('video'); v.muted=true; v.playsInline=true; v.preload='auto'; v.src='fx_'+k+'.mp4';
+    v.addEventListener('canplaythrough',()=>{vids[k]=v;}); v.addEventListener('error',()=>{vids[k]=null;}); v.load(); });
+  function playVideo(kind){
+    const v=vids[kind]; if(!v||!fxv) return false;
+    playing=true; fxv.insertBefore(v,fxv.firstChild); v.currentTime=0;
+    let done=false; const end=()=>{ if(done) return; done=true; fxv.classList.remove('on'); setTimeout(()=>{ try{v.pause();}catch(e){} if(v.parentNode===fxv) fxv.removeChild(v); playing=false; },1000); };
+    v.onended=end; v.onerror=end;
+    const pr=v.play(); if(pr&&pr.catch) pr.catch(()=>{ done=true; if(v.parentNode===fxv) fxv.removeChild(v); playing=false; });
+    fxv.classList.add('on'); setTimeout(end,60000);
+    return true;
+  }
   function play(kind){
-    if(playing||!kind) return; playing=true;
+    if(playing||!kind) return;
+    if(playVideo(kind)) return;
+    playing=true;
     root.innerHTML=kind==='autumn'?sceneAutumn():sceneWinter();
     void root.offsetWidth; root.classList.add('on'); run(kind);
     timer=setTimeout(()=>{ root.classList.remove('on'); },DUR-900);
